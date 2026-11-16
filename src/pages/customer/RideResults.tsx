@@ -228,13 +228,7 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
             </h3>
 
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-[#087f5b]">
-                <ShieldCheck size={13} />
-                Registered driver
-              </span>
-
-              <span className="h-1 w-1 rounded-full bg-[#b7c0ba]" />
-
+             
               <span className="text-xs text-[#68736d]">
                 LIVE
               </span>
