@@ -19,17 +19,14 @@ interface NearbyDriverRow {
   last_location_update: string | null
 }
 
-/* =========================================
-   CONSTANTS
-========================================= */
+export interface DriverProfileUpdate {
+  fullName: string
+  vehicleType: VehicleType
+  vehicleModel: string
+  vehicleNumber: string
+}
 
 const LOCATION_STALE_AFTER_MS = 2 * 60 * 1000
-
-/*
-=========================================
-GET AUTHENTICATED DRIVER ID
-=========================================
-*/
 
 const getAuthenticatedDriverId = async (): Promise<string> => {
   const {
@@ -48,6 +45,28 @@ const getAuthenticatedDriverId = async (): Promise<string> => {
 
 /*
 =========================================
+MAP DRIVER PROFILE
+=========================================
+*/
+
+const mapDriverProfile = (data: any): DriverProfile => ({
+  id: data.id,
+  fullName: data.full_name,
+  phone: data.phone,
+  phoneVerified: data.phone_verified,
+  vehicleType: data.vehicle_type,
+  vehicleModel: data.vehicle_model,
+  vehicleNumber: data.vehicle_number,
+  profilePhotoUrl: data.profile_photo_url,
+  verificationStatus: data.phone_verified
+    ? 'phone_verified'
+    : 'unverified',
+  createdAt: data.created_at,
+  updatedAt: data.updated_at,
+})
+
+/*
+=========================================
 GET AUTHENTICATED DRIVER PROFILE
 =========================================
 */
@@ -63,21 +82,58 @@ export const getDriverProfile = async (): Promise<DriverProfile> => {
 
   if (error) throw error
 
-  return {
-    id: data.id,
-    fullName: data.full_name,
-    phone: data.phone,
-    phoneVerified: data.phone_verified,
-    vehicleType: data.vehicle_type,
-    vehicleModel: data.vehicle_model,
-    vehicleNumber: data.vehicle_number,
-    profilePhotoUrl: data.profile_photo_url,
-    verificationStatus: data.phone_verified
-      ? 'phone_verified'
-      : 'unverified',
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
+  return mapDriverProfile(data)
+}
+
+/*
+=========================================
+UPDATE DRIVER PROFILE
+=========================================
+Updates only the authenticated driver's
+editable personal and vehicle details.
+=========================================
+*/
+
+export const updateDriverProfile = async (
+  profile: DriverProfileUpdate,
+): Promise<DriverProfile> => {
+  const userId = await getAuthenticatedDriverId()
+
+  const fullName = profile.fullName.trim()
+  const vehicleModel = profile.vehicleModel.trim()
+  const vehicleNumber = profile.vehicleNumber.trim().toUpperCase()
+
+  if (fullName.length < 2 || fullName.length > 80) {
+    throw new Error('Please enter a valid full name.')
   }
+
+  if (vehicleModel.length < 2 || vehicleModel.length > 60) {
+    throw new Error('Please enter a valid vehicle model.')
+  }
+
+  if (!/^[A-Z0-9 -]{6,15}$/.test(vehicleNumber)) {
+    throw new Error('Please enter a valid vehicle registration number.')
+  }
+
+  if (!['auto', 'taxi', 'bike'].includes(profile.vehicleType)) {
+    throw new Error('Please select a valid vehicle category.')
+  }
+
+  const { data, error } = await supabase
+    .from('drivers')
+    .update({
+      full_name: fullName,
+      vehicle_type: profile.vehicleType,
+      vehicle_model: vehicleModel,
+      vehicle_number: vehicleNumber,
+    })
+    .eq('id', userId)
+    .select('*')
+    .single()
+
+  if (error) throw error
+
+  return mapDriverProfile(data)
 }
 
 /*

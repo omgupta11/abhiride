@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -9,8 +10,11 @@ import {
   Headset,
   LogOut,
   Phone,
+  Pencil,
+  Save,
   ShieldCheck,
   UserRound,
+  X,
 } from 'lucide-react'
 
 import Logo from '../../components/common/Logo'
@@ -21,10 +25,12 @@ import {
   getDriverLastLocationUpdate,
   setDriverAvailability,
   updateDriverLocation,
+  updateDriverProfile,
   signOutDriver,
 } from '../../lib/driverService'
 
-import type { DriverProfile } from '../../types/driver'
+import type { DriverProfile, VehicleType } from '../../types/driver'
+import type { DriverProfileUpdate } from '../../lib/driverService'
 
 const DriverDashboard = () => {
   const [driver, setDriver] = useState<DriverProfile | null>(null)
@@ -37,6 +43,14 @@ const DriverDashboard = () => {
     useState<string | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileForm, setProfileForm] = useState<DriverProfileUpdate>({
+    fullName: '',
+    vehicleType: 'auto',
+    vehicleModel: '',
+    vehicleNumber: '',
+  })
 
   const watchId = useRef<number | null>(null)
   const heartbeatTimer = useRef<number | null>(null)
@@ -340,6 +354,78 @@ const DriverDashboard = () => {
     }
   }
 
+  // EDIT DRIVER PROFILE
+
+const handleOpenProfileEditor = () => {
+  if (!driver) return
+
+  setProfileForm({
+    fullName: driver.fullName,
+    vehicleType: driver.vehicleType,
+    vehicleModel: driver.vehicleModel,
+    vehicleNumber: driver.vehicleNumber,
+  })
+
+  setError('')
+  setNotice('')
+  setIsEditingProfile(true)
+}
+
+  const handleCancelProfileEdit = () => {
+    if (isSavingProfile) return
+
+    setIsEditingProfile(false)
+    setError('')
+  }
+
+  const handleSaveProfile = async () => {
+    if (isSavingProfile) return
+
+    const fullName = profileForm.fullName.trim()
+    const vehicleModel = profileForm.vehicleModel.trim()
+    const vehicleNumber = profileForm.vehicleNumber.trim().toUpperCase()
+
+    if (fullName.length < 2 || fullName.length > 80) {
+      setError('Full name must contain between 2 and 80 characters.')
+      return
+    }
+
+    if (vehicleModel.length < 2 || vehicleModel.length > 60) {
+      setError('Vehicle model must contain between 2 and 60 characters.')
+      return
+    }
+
+    if (!/^[A-Z0-9 -]{6,15}$/.test(vehicleNumber)) {
+      setError('Please enter a valid vehicle registration number.')
+      return
+    }
+
+    try {
+      setIsSavingProfile(true)
+      setError('')
+      setNotice('')
+
+      const updatedProfile = await updateDriverProfile({
+        fullName,
+        vehicleType: profileForm.vehicleType,
+        vehicleModel,
+        vehicleNumber,
+      })
+
+      setDriver(updatedProfile)
+      setIsEditingProfile(false)
+      setNotice('Your driver profile has been updated successfully.')
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to update your driver profile. Please try again.',
+      )
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
   // DRIVER LOGOUT
 
   const handleLogout = async () => {
@@ -529,78 +615,230 @@ const DriverDashboard = () => {
                   </p>
                 </div>
 
-                <UserRound size={19} className="text-[#818a85]" />
+                {!isEditingProfile ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenProfileEditor}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dce9df] bg-[#f0f8f3] px-3 text-xs font-semibold text-[#087f5b] transition-colors hover:bg-[#e6f3eb]"
+                  >
+                    <Pencil size={14} />
+                    Edit profile
+                  </button>
+                ) : (
+                  <span className="text-xs font-semibold text-[#087f5b]">
+                    Editing profile
+                  </span>
+                )}
               </div>
 
               <div className="p-5 sm:p-6">
-                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#dce4de] bg-[#fafbfa] px-5 py-7 text-center">
-                  {driver.profilePhotoUrl ? (
-                    <img
-                      src={driver.profilePhotoUrl}
-                      alt={`${driver.fullName} profile`}
-                      className="h-20 w-20 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
-                      <UserRound size={28} />
-                    </div>
-                  )}
+                {!isEditingProfile ? (
+                  <>
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#dce4de] bg-[#fafbfa] px-5 py-7 text-center">
+                      {driver.profilePhotoUrl ? (
+                        <img
+                          src={driver.profilePhotoUrl}
+                          alt={`${driver.fullName} profile`}
+                          className="h-20 w-20 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
+                          <UserRound size={28} />
+                        </div>
+                      )}
 
-                  <h3 className="mt-4 text-base font-semibold text-[#151a18]">
-                    {driver.fullName}
-                  </h3>
+                      <h3 className="mt-4 text-base font-semibold text-[#151a18]">
+                        {driver.fullName}
+                      </h3>
 
-                  <p className="mt-2 text-sm text-[#68736d]">
-                    {driver.phone}
-                  </p>
-
-                  <div className="mt-3 flex items-center gap-2">
-                    <ShieldCheck
-                      size={15}
-                      className={
-                        driver.phoneVerified
-                          ? 'text-[#168653]'
-                          : 'text-[#b7791f]'
-                      }
-                    />
-
-                    <span className="text-xs text-[#68736d]">
-                      {driver.phoneVerified
-                        ? 'Mobile verified'
-                        : 'Mobile not verified'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 border-t border-[#edf0ed] pt-5 sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs text-[#818a85]">
-                      Mobile number
-                    </p>
-
-                    <div className="mt-2 flex items-center gap-2">
-                      <Phone size={15} className="text-[#818a85]" />
-
-                      <span className="text-sm font-medium text-[#454d49]">
+                      <p className="mt-2 text-sm text-[#68736d]">
                         {driver.phone}
-                      </span>
+                      </p>
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <ShieldCheck
+                          size={15}
+                          className={
+                            driver.phoneVerified
+                              ? 'text-[#168653]'
+                              : 'text-[#b7791f]'
+                          }
+                        />
+
+                        <span className="text-xs text-[#68736d]">
+                          {driver.phoneVerified
+                            ? 'Mobile verified'
+                            : 'Mobile not verified'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 grid gap-4 border-t border-[#edf0ed] pt-5 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs text-[#818a85]">
+                          Mobile number
+                        </p>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          <Phone size={15} className="text-[#818a85]" />
+
+                          <span className="text-sm font-medium text-[#454d49]">
+                            {driver.phone}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-[#818a85]">
+                          Account verification
+                        </p>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          <ShieldCheck size={15} className="text-[#818a85]" />
+
+                          <span className="text-sm font-medium text-[#454d49]">
+                            {driver.phoneVerified ? 'Verified' : 'Pending'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-5">
+                    <div>
+                      <label
+                        htmlFor="edit-driver-full-name"
+                        className="mb-2 block text-sm font-semibold text-[#454d49]"
+                      >
+                        Full name
+                      </label>
+                      <input
+                        id="edit-driver-full-name"
+                        type="text"
+                        autoComplete="name"
+                        maxLength={80}
+                        value={profileForm.fullName}
+                        onChange={(event) =>
+                          setProfileForm((previous) => ({
+                            ...previous,
+                            fullName: event.target.value,
+                          }))
+                        }
+                        className="min-h-12 w-full rounded-xl border border-[#e8ece9] bg-white px-4 text-sm text-[#151a18] outline-none transition-colors focus:border-[#087f5b] focus:ring-4 focus:ring-[#087f5b]/10"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="edit-driver-vehicle-type"
+                        className="mb-2 block text-sm font-semibold text-[#454d49]"
+                      >
+                        Vehicle category
+                      </label>
+                      <select
+                        id="edit-driver-vehicle-type"
+                        value={profileForm.vehicleType}
+                        onChange={(event) =>
+                          setProfileForm((previous) => ({
+                            ...previous,
+                            vehicleType: event.target.value as VehicleType,
+                          }))
+                        }
+                        className="min-h-12 w-full rounded-xl border border-[#e8ece9] bg-white px-4 text-sm text-[#151a18] outline-none transition-colors focus:border-[#087f5b] focus:ring-4 focus:ring-[#087f5b]/10"
+                      >
+                        <option value="auto">Auto</option>
+                        <option value="taxi">Taxi</option>
+                        <option value="bike">Bike</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="edit-driver-vehicle-model"
+                        className="mb-2 block text-sm font-semibold text-[#454d49]"
+                      >
+                        Vehicle model
+                      </label>
+                      <input
+                        id="edit-driver-vehicle-model"
+                        type="text"
+                        maxLength={60}
+                        placeholder="e.g. Bajaj RE, Maruti Dzire, Honda Activa"
+                        value={profileForm.vehicleModel}
+                        onChange={(event) =>
+                          setProfileForm((previous) => ({
+                            ...previous,
+                            vehicleModel: event.target.value,
+                          }))
+                        }
+                        className="min-h-12 w-full rounded-xl border border-[#e8ece9] bg-white px-4 text-sm text-[#151a18] outline-none transition-colors focus:border-[#087f5b] focus:ring-4 focus:ring-[#087f5b]/10"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="edit-driver-vehicle-number"
+                        className="mb-2 block text-sm font-semibold text-[#454d49]"
+                      >
+                        Vehicle registration number
+                      </label>
+                      <input
+                        id="edit-driver-vehicle-number"
+                        type="text"
+                        autoCapitalize="characters"
+                        maxLength={15}
+                        placeholder="e.g. UP78AB1234"
+                        value={profileForm.vehicleNumber}
+                        onChange={(event) =>
+                          setProfileForm((previous) => ({
+                            ...previous,
+                            vehicleNumber: event.target.value
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9 -]/g, ''),
+                          }))
+                        }
+                        className="min-h-12 w-full rounded-xl border border-[#e8ece9] bg-white px-4 text-sm uppercase text-[#151a18] outline-none transition-colors focus:border-[#087f5b] focus:ring-4 focus:ring-[#087f5b]/10"
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-[#e8ece9] bg-[#fafbfa] p-4">
+                      <div className="flex items-center gap-2">
+                        <Phone size={15} className="text-[#818a85]" />
+                        <span className="text-xs font-semibold text-[#454d49]">
+                          Registered mobile number
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-[#454d49]">
+                        {driver.phone}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[#818a85]">
+                        Mobile number cannot be changed from this form.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col-reverse gap-3 border-t border-[#edf0ed] pt-5 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={handleCancelProfileEdit}
+                        disabled={isSavingProfile}
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#e8ece9] bg-white px-4 text-sm font-semibold text-[#454d49] transition-colors hover:bg-[#f5f8f6] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <X size={16} />
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveProfile}
+                        disabled={isSavingProfile}
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Save size={16} />
+                        {isSavingProfile ? 'Saving...' : 'Save changes'}
+                      </button>
                     </div>
                   </div>
-
-                  <div>
-                    <p className="text-xs text-[#818a85]">
-                      Account verification
-                    </p>
-
-                    <div className="mt-2 flex items-center gap-2">
-                      <ShieldCheck size={15} className="text-[#818a85]" />
-
-                      <span className="text-sm font-medium text-[#454d49]">
-                        {driver.phoneVerified ? 'Verified' : 'Pending'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </section>
 
