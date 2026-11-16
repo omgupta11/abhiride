@@ -1,5 +1,10 @@
 
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -15,6 +20,7 @@ import {
   ShieldCheck,
   UserRound,
   X,
+  ImagePlus,
 } from 'lucide-react'
 
 import Logo from '../../components/common/Logo'
@@ -29,22 +35,40 @@ import {
   signOutDriver,
 } from '../../lib/driverService'
 
+import { supabase } from '../../lib/supabase'
+
 import type { DriverProfile, VehicleType } from '../../types/driver'
 import type { DriverProfileUpdate } from '../../lib/driverService'
+
+const MAX_PHOTO_SIZE = 5 * 1024 * 1024
+
+const ALLOWED_PHOTO_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]
 
 const DriverDashboard = () => {
   const [driver, setDriver] = useState<DriverProfile | null>(null)
   const [isLive, setIsLive] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
+
   const [locationPermissionGranted, setLocationPermissionGranted] =
     useState(false)
+
   const [lastLocationUpdate, setLastLocationUpdate] =
     useState<string | null>(null)
+
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
+
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+
   const [profileForm, setProfileForm] = useState<DriverProfileUpdate>({
     fullName: '',
     vehicleType: 'auto',
@@ -57,6 +81,18 @@ const DriverDashboard = () => {
   const isLiveRef = useRef(false)
   const lastUploadAt = useRef(0)
   const uploadInProgress = useRef(false)
+
+  // CLEAN UP PHOTO PREVIEW URL
+
+  useEffect(() => {
+    if (!photoPreview) return
+
+    return () => {
+      URL.revokeObjectURL(photoPreview)
+    }
+  }, [photoPreview])
+
+  // STOP LOCATION TRACKING
 
   const stopLocationTracking = () => {
     if (watchId.current !== null) {
@@ -72,6 +108,8 @@ const DriverDashboard = () => {
     lastUploadAt.current = 0
     uploadInProgress.current = false
   }
+
+  // LOAD DRIVER DASHBOARD
 
   useEffect(() => {
     let mounted = true
@@ -173,15 +211,11 @@ const DriverDashboard = () => {
       )
     }
 
-    // Upload the current position immediately when LIVE tracking starts.
-
     navigator.geolocation.getCurrentPosition(
       (position) => void uploadLocation(position, true),
       handleLocationError,
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     )
-
-    // Listen for position changes reported by the browser.
 
     const watch = navigator.geolocation.watchPosition(
       (position) => {
@@ -195,8 +229,6 @@ const DriverDashboard = () => {
     )
 
     watchId.current = watch
-
-    // Refresh the saved location even when the driver is stationary.
 
     heartbeatTimer.current = window.setInterval(() => {
       if (!active || !isLiveRef.current || uploadInProgress.current) return
@@ -223,7 +255,7 @@ const DriverDashboard = () => {
     }
   }, [isLive, driver])
 
-  // STOP TRACKING WHEN COMPONENT UNMOUNTS
+  // CLEAN UP LOCATION TRACKING
 
   useEffect(() => {
     return () => {
@@ -235,8 +267,6 @@ const DriverDashboard = () => {
 
   const handleAvailabilityChange = async (nextStatus: boolean) => {
     if (isUpdating) return
-
-    // SWITCH OFFLINE
 
     if (!nextStatus) {
       try {
@@ -266,14 +296,10 @@ const DriverDashboard = () => {
       return
     }
 
-    // CHECK MOBILE VERIFICATION
-
     if (!driver?.phoneVerified) {
       setError('Your mobile number must be verified before going LIVE.')
       return
     }
-
-    // CHECK GEOLOCATION SUPPORT
 
     if (!navigator.geolocation) {
       setError('Location services are not supported by this browser.')
@@ -284,8 +310,6 @@ const DriverDashboard = () => {
       setIsUpdating(true)
       setError('')
       setNotice('')
-
-      // GET CURRENT LOCATION BEFORE GOING LIVE
 
       const position = await new Promise<GeolocationPosition>(
         (resolve, reject) => {
@@ -299,12 +323,8 @@ const DriverDashboard = () => {
 
       setLocationPermissionGranted(true)
 
-      // ENABLE DRIVER AVAILABILITY
-
       await setDriverAvailability(true)
       isLiveRef.current = true
-
-      // SAVE INITIAL LOCATION
 
       try {
         const updatedAt = await updateDriverLocation(
@@ -354,32 +374,69 @@ const DriverDashboard = () => {
     }
   }
 
-  // EDIT DRIVER PROFILE
+  // OPEN PROFILE EDITOR
 
-const handleOpenProfileEditor = () => {
-  if (!driver) return
+  const handleOpenProfileEditor = () => {
+    if (!driver) return
 
-  setProfileForm({
-    fullName: driver.fullName,
-    vehicleType: driver.vehicleType,
-    vehicleModel: driver.vehicleModel,
-    vehicleNumber: driver.vehicleNumber,
-  })
+    setProfileForm({
+      fullName: driver.fullName,
+      vehicleType: driver.vehicleType,
+      vehicleModel: driver.vehicleModel,
+      vehicleNumber: driver.vehicleNumber,
+    })
 
-  setError('')
-  setNotice('')
-  setIsEditingProfile(true)
-}
+    setSelectedPhoto(null)
+    setPhotoPreview(null)
+    setError('')
+    setNotice('')
+    setIsEditingProfile(true)
+  }
+
+  // SELECT PROFILE PHOTO
+
+  const handleProfilePhotoChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      setError('Please select a JPG, PNG or WebP image.')
+      event.target.value = ''
+      return
+    }
+
+    if (file.size > MAX_PHOTO_SIZE) {
+      setError('Profile photo must be smaller than 5 MB.')
+      event.target.value = ''
+      return
+    }
+
+    setError('')
+    setSelectedPhoto(file)
+    setPhotoPreview(URL.createObjectURL(file))
+
+    // Allows selecting the same image again if needed.
+    event.target.value = ''
+  }
+
+  // CANCEL PROFILE EDITING
 
   const handleCancelProfileEdit = () => {
     if (isSavingProfile) return
 
     setIsEditingProfile(false)
+    setSelectedPhoto(null)
+    setPhotoPreview(null)
     setError('')
   }
 
+  // SAVE DRIVER PROFILE AND PHOTO
+
   const handleSaveProfile = async () => {
-    if (isSavingProfile) return
+    if (isSavingProfile || !driver) return
 
     const fullName = profileForm.fullName.trim()
     const vehicleModel = profileForm.vehicleModel.trim()
@@ -405,6 +462,8 @@ const handleOpenProfileEditor = () => {
       setError('')
       setNotice('')
 
+      // Save personal and vehicle details first.
+
       const updatedProfile = await updateDriverProfile({
         fullName,
         vehicleType: profileForm.vehicleType,
@@ -413,8 +472,78 @@ const handleOpenProfileEditor = () => {
       })
 
       setDriver(updatedProfile)
+
+      // Upload a new photo only when the driver selects one.
+
+      if (selectedPhoto) {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser()
+
+        if (authError) throw authError
+
+        if (!user) {
+          throw new Error('Please sign in again to update your photo.')
+        }
+
+        const extension =
+          selectedPhoto.type === 'image/png'
+            ? 'png'
+            : selectedPhoto.type === 'image/webp'
+              ? 'webp'
+              : 'jpg'
+
+        const photoPath = `${user.id}/${crypto.randomUUID()}.${extension}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('driver-photos')
+          .upload(photoPath, selectedPhoto, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: selectedPhoto.type,
+          })
+
+        if (uploadError) throw uploadError
+
+        const { data: photoData } = supabase.storage
+          .from('driver-photos')
+          .getPublicUrl(photoPath)
+
+        const { error: photoUpdateError } = await supabase
+          .from('drivers')
+          .update({
+            profile_photo_url: photoData.publicUrl,
+          })
+          .eq('id', user.id)
+
+        if (photoUpdateError) {
+          try {
+            await supabase.storage
+              .from('driver-photos')
+              .remove([photoPath])
+          } catch {
+            // Keep the original profile photo if linking fails.
+          }
+
+          throw photoUpdateError
+        }
+
+        setDriver({
+          ...updatedProfile,
+          profilePhotoUrl: photoData.publicUrl,
+        })
+      }
+
       setIsEditingProfile(false)
-      setNotice('Your driver profile has been updated successfully.')
+      setSelectedPhoto(null)
+      setPhotoPreview(null)
+
+      setNotice(
+        selectedPhoto
+          ? 'Your profile and profile photo have been updated successfully.'
+          : 'Your driver profile has been updated successfully.',
+      )
     } catch (err) {
       setError(
         err instanceof Error
@@ -509,8 +638,6 @@ const handleOpenProfileEditor = () => {
           </div>
         </div>
       </header>
-
-      {/* MAIN DASHBOARD */}
 
       <main className="mx-auto max-w-[1200px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         {error && (
@@ -705,6 +832,67 @@ const handleOpenProfileEditor = () => {
                   </>
                 ) : (
                   <div className="space-y-5">
+                    {/* PROFILE PHOTO EDITOR */}
+
+                    <div>
+                      <label className="mb-3 block text-sm font-semibold text-[#454d49]">
+                        Profile photo
+                      </label>
+
+                      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-dashed border-[#dce4de] bg-[#fafbfa] p-4">
+                        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#e8ece9] bg-[#f0f8f3]">
+                          {photoPreview ? (
+                            <img
+                              src={photoPreview}
+                              alt="New profile photo preview"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : driver.profilePhotoUrl ? (
+                            <img
+                              src={driver.profilePhotoUrl}
+                              alt={`${driver.fullName} profile`}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <UserRound
+                              size={36}
+                              className="text-[#087f5b]"
+                            />
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <input
+                            id="driver-edit-profile-photo"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={handleProfilePhotoChange}
+                            className="hidden"
+                          />
+
+                          <label
+                            htmlFor="driver-edit-profile-photo"
+                            className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#e8ece9] bg-white px-4 text-xs font-semibold text-[#454d49] transition-colors hover:bg-[#f5f8f6]"
+                          >
+                            <ImagePlus size={16} />
+                            {selectedPhoto ? 'Choose another photo' : 'Upload photo'}
+                          </label>
+
+                          <p className="mt-2 text-xs leading-5 text-[#818a85]">
+                            JPG, PNG or WebP. Maximum file size 5 MB.
+                          </p>
+
+                          {selectedPhoto && (
+                            <p className="mt-2 break-all text-xs font-medium text-[#087f5b]">
+                              {selectedPhoto.name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* FULL NAME */}
+
                     <div>
                       <label
                         htmlFor="edit-driver-full-name"
@@ -712,6 +900,7 @@ const handleOpenProfileEditor = () => {
                       >
                         Full name
                       </label>
+
                       <input
                         id="edit-driver-full-name"
                         type="text"
@@ -728,6 +917,8 @@ const handleOpenProfileEditor = () => {
                       />
                     </div>
 
+                    {/* VEHICLE CATEGORY */}
+
                     <div>
                       <label
                         htmlFor="edit-driver-vehicle-type"
@@ -735,6 +926,7 @@ const handleOpenProfileEditor = () => {
                       >
                         Vehicle category
                       </label>
+
                       <select
                         id="edit-driver-vehicle-type"
                         value={profileForm.vehicleType}
@@ -752,6 +944,8 @@ const handleOpenProfileEditor = () => {
                       </select>
                     </div>
 
+                    {/* VEHICLE MODEL */}
+
                     <div>
                       <label
                         htmlFor="edit-driver-vehicle-model"
@@ -759,6 +953,7 @@ const handleOpenProfileEditor = () => {
                       >
                         Vehicle model
                       </label>
+
                       <input
                         id="edit-driver-vehicle-model"
                         type="text"
@@ -775,6 +970,8 @@ const handleOpenProfileEditor = () => {
                       />
                     </div>
 
+                    {/* VEHICLE REGISTRATION NUMBER */}
+
                     <div>
                       <label
                         htmlFor="edit-driver-vehicle-number"
@@ -782,6 +979,7 @@ const handleOpenProfileEditor = () => {
                       >
                         Vehicle registration number
                       </label>
+
                       <input
                         id="edit-driver-vehicle-number"
                         type="text"
@@ -801,20 +999,27 @@ const handleOpenProfileEditor = () => {
                       />
                     </div>
 
+                    {/* PHONE NUMBER */}
+
                     <div className="rounded-xl border border-[#e8ece9] bg-[#fafbfa] p-4">
                       <div className="flex items-center gap-2">
                         <Phone size={15} className="text-[#818a85]" />
+
                         <span className="text-xs font-semibold text-[#454d49]">
                           Registered mobile number
                         </span>
                       </div>
+
                       <p className="mt-2 text-sm font-medium text-[#454d49]">
                         {driver.phone}
                       </p>
+
                       <p className="mt-1 text-xs leading-5 text-[#818a85]">
                         Mobile number cannot be changed from this form.
                       </p>
                     </div>
+
+                    {/* SAVE AND CANCEL */}
 
                     <div className="flex flex-col-reverse gap-3 border-t border-[#edf0ed] pt-5 sm:flex-row sm:justify-end">
                       <button
