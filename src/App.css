@@ -1,0 +1,128 @@
+
+/* =========================================
+   ABHIRIDE — APPLICATION STYLES
+   ========================================= */
+
+/* Application shell */
+
+.app-shell {
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: clip;
+  background: var(--color-surface);
+}
+
+/* Main content container */
+
+.page-container {
+  width: min(100% - 48px, var(--container-width));
+  margin-inline: auto;
+}
+
+/* Section spacing */
+
+.section-spacing {
+  padding-block: 72px;
+}
+
+/* Subtle surfaces */
+
+.surface-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+/* Brand button */
+
+.button-primary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 22px;
+  border: 1px solid var(--color-brand);
+  border-radius: var(--radius-md);
+  background: var(--color-brand);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.button-primary:hover:not(:disabled) {
+  border-color: var(--color-brand-hover);
+  background: var(--color-brand-hover);
+}
+
+.button-primary:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+/* Secondary button */
+
+.button-secondary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  color: var(--color-heading);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.button-secondary:hover:not(:disabled) {
+  border-color: #cbd5ce;
+  background: #f8faf8;
+}
+
+/* Form fields */
+
+.form-field {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  color: var(--color-heading);
+  font-size: 14px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.form-field::placeholder {
+  color: #a0a8a3;
+}
+
+.form-field:focus {
+  border-color: var(--color-brand);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(8, 127, 91, 0.09);
+}
+
+/* Responsive layout */
+
+@media (max-width: 640px) {
+  .page-container {
+    width: min(100% - 32px, var(--container-width));
+  }
+
+  .section-spacing {
+    padding-block: 48px;
+  }
+}
