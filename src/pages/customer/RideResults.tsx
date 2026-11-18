@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
@@ -69,7 +68,6 @@ interface NearbyDriver {
 ========================================= */
 
 const SEARCH_RADIUS_METERS = 5000
-const LOCATION_STALE_AFTER_MS = 2 * 60 * 1000
 const CUSTOMER_LOCATION_REFRESH_MS = 15000
 const DRIVER_SEARCH_REFRESH_MS = 15000
 
@@ -125,16 +123,6 @@ const formatLastUpdate = (value: string | null): string => {
   const days = Math.floor(hours / 24)
 
   return `Updated ${days} day${days === 1 ? '' : 's'} ago`
-}
-
-const isLocationStale = (value: string | null): boolean => {
-  if (!value) return true
-
-  const timestamp = new Date(value).getTime()
-
-  if (!Number.isFinite(timestamp)) return true
-
-  return Date.now() - timestamp > LOCATION_STALE_AFTER_MS
 }
 
 const getErrorMessage = (error: unknown): string => {
@@ -203,8 +191,6 @@ const EmptyResults = ({
 ========================================= */
 
 const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
-  const stale = isLocationStale(driver.lastLocationUpdate)
-
   return (
     <article className="rounded-2xl border border-[#e8ece9] bg-white p-5 shadow-[0_2px_12px_rgba(20,35,27,0.025)] sm:p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -228,7 +214,6 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
             </h3>
 
             <div className="mt-1 flex flex-wrap items-center gap-2">
-             
               <span className="text-xs text-[#68736d]">
                 LIVE
               </span>
@@ -250,26 +235,12 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
             {formatDistance(driver.distanceMeters)}
           </span>
 
-          <span
-            className={`inline-flex items-center gap-1 text-xs ${
-              stale ? 'text-[#b7791f]' : 'text-[#68736d]'
-            }`}
-          >
+          <span className="inline-flex items-center gap-1 text-xs text-[#68736d]">
             <Clock3 size={12} />
             {formatLastUpdate(driver.lastLocationUpdate)}
           </span>
         </div>
       </div>
-
-      {stale && (
-        <div className="mt-4 rounded-xl border border-[#eee5d3] bg-[#fffcf5] px-3 py-2.5">
-          <p className="text-xs leading-5 text-[#806b43]">
-            This driver's last GPS update is older than two minutes.
-            Their LIVE status is manually controlled, so their current
-            position may have changed.
-          </p>
-        </div>
-      )}
 
       <div className="mt-5 border-t border-[#edf0ed] pt-4">
         <a
