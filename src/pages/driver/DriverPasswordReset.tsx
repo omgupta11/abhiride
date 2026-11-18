@@ -1,25 +1,56 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, LockKeyhole, ShieldCheck, AlertCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+} from 'lucide-react'
 
 import Logo from '../../components/common/Logo'
 import Button from '../../components/common/Button'
 import { supabase } from '../../lib/supabase'
 
 function DriverPasswordReset() {
-  const navigate = useNavigate()
-
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+
   const [isChecking, setIsChecking] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isRecoverySession, setIsRecoverySession] = useState(false)
+  const [isCompleted, setIsCompleted] = useState(false)
+
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  // VERIFY PASSWORD RECOVERY SESSION
+
   useEffect(() => {
     let mounted = true
+    let recoveryEventReceived = false
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return
+
+      if (event === 'PASSWORD_RECOVERY' && session) {
+        recoveryEventReceived = true
+        setIsRecoverySession(true)
+        setError('')
+        setIsChecking(false)
+      }
+
+      if (event === 'SIGNED_OUT') {
+        setIsRecoverySession(false)
+      }
+    })
 
     const checkRecoverySession = async () => {
       try {
@@ -29,38 +60,45 @@ function DriverPasswordReset() {
         } = await supabase.auth.getSession()
 
         if (sessionError) throw sessionError
+        if (!mounted) return
 
-        if (mounted) {
-          setIsRecoverySession(Boolean(session))
-          if (!session) {
-            setError(
-              'This password reset link is invalid or has expired. Please request a new one.',
-            )
-          }
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace(/^#/, ''),
+        )
+
+        const searchParams = new URLSearchParams(window.location.search)
+
+        const recoveryTypeInUrl =
+          hashParams.get('type') === 'recovery' ||
+          searchParams.get('type') === 'recovery'
+
+        const isValidRecovery =
+          Boolean(session) &&
+          (recoveryEventReceived || recoveryTypeInUrl)
+
+        setIsRecoverySession(isValidRecovery)
+
+        if (!isValidRecovery) {
+          setError(
+            'This password reset link is invalid or has expired. Please request a new one.',
+          )
         }
       } catch (err) {
         if (mounted) {
+          setIsRecoverySession(false)
+
           setError(
             err instanceof Error
               ? err.message
-              : 'Unable to verify your reset link.',
+              : 'Unable to verify your password reset link.',
           )
         }
       } finally {
-        if (mounted) setIsChecking(false)
+        if (mounted) {
+          setIsChecking(false)
+        }
       }
     }
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return
-
-      if (event === 'PASSWORD_RECOVERY' && session) {
-        setIsRecoverySession(true)
-        setError('')
-      }
-    })
 
     void checkRecoverySession()
 
@@ -70,8 +108,15 @@ function DriverPasswordReset() {
     }
   }, [])
 
-  const handleSavePassword = async (event: FormEvent<HTMLFormElement>) => {
+  // SAVE NEW PASSWORD
+
+  const handleSavePassword = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault()
+
+    if (isSaving || isCompleted) return
+
     setError('')
     setNotice('')
 
@@ -86,7 +131,7 @@ function DriverPasswordReset() {
     }
 
     if (!isRecoverySession) {
-      setError('Your recovery session is invalid. Request a new reset link.')
+      setError('Your recovery session is invalid. Please request a new reset link.')
       return
     }
 
@@ -99,13 +144,22 @@ function DriverPasswordReset() {
 
       if (updateError) throw updateError
 
-      setNotice('Your password has been updated successfully.')
+      // PASSWORD SUCCESSFULLY UPDATED
 
-      await supabase.auth.signOut()
+      setPassword('')
+      setConfirmPassword('')
+      setIsCompleted(true)
+      setIsRecoverySession(false)
 
-      window.setTimeout(() => {
-        navigate('/drivers', { replace: true })
-      }, 1500)
+      setNotice(
+        'Your password has been updated successfully. Please sign in using your new password.',
+      )
+
+      // SIGN OUT THE RECOVERY SESSION
+
+      await supabase.auth.signOut({
+        scope: 'local',
+      })
     } catch (err) {
       setError(
         err instanceof Error
@@ -117,16 +171,33 @@ function DriverPasswordReset() {
     }
   }
 
+  // LOADING SCREEN
+
+  if (isChecking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#fafbfa]">
+        <p className="text-sm text-[#68736d]">
+          Verifying your reset link...
+        </p>
+      </div>
+    )
+  }
+
+  // PAGE LAYOUT
+
   return (
-    <div className="min-h-screen bg-white text-[#151a18]">
-      <header className="border-b border-[#e8ece9]">
-        <div className="mx-auto flex h-[76px] w-[min(100%-40px,1200px)] items-center justify-between">
+    <div className="flex min-h-screen flex-col bg-[#fafbfa] text-[#151a18]">
+      {/* HEADER */}
+
+      <header className="border-b border-[#e8ece9] bg-white">
+        <div className="mx-auto flex h-[72px] max-w-[1100px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" aria-label="AbhiRide homepage">
-            <Logo size="medium" />
+            <Logo />
           </Link>
+
           <Link
             to="/drivers"
-            className="inline-flex items-center gap-2 text-sm font-medium text-[#454d49]"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[#68736d] transition-colors hover:text-[#087f5b]"
           >
             <ArrowLeft size={16} />
             Driver sign in
@@ -134,116 +205,264 @@ function DriverPasswordReset() {
         </div>
       </header>
 
-      <main className="flex min-h-[calc(100vh-77px)] items-center justify-center px-5 py-12">
-        <section className="w-full max-w-[440px] rounded-[22px] border border-[#e8ece9] bg-white p-7 shadow-[0_12px_50px_rgba(21,26,24,0.06)] sm:p-9">
-          <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#edf7f1] text-[#087f5b]">
-            <LockKeyhole size={22} />
-          </div>
+      {/* MAIN CONTENT */}
 
-          <h1 className="text-[26px] font-semibold tracking-tight">
-            Create a new password
-          </h1>
+      <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 sm:py-14">
+        <section className="w-full max-w-[440px] rounded-2xl border border-[#e8ece9] bg-white p-6 shadow-[0_4px_24px_rgba(20,35,27,0.035)] sm:p-9">
 
-          <p className="mt-2 text-sm leading-6 text-[#818a85]">
-            Choose a new password for your AbhiRide driver account.
-          </p>
+          {/* SUCCESS SCREEN */}
 
-          {isChecking ? (
-            <p className="mt-8 text-sm text-[#68736d]">
-              Verifying your recovery link...
-            </p>
-          ) : !isRecoverySession ? (
-            <div className="mt-6">
-              {error && (
-                <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5">
-                  <AlertCircle size={17} className="shrink-0 text-red-600" />
-                  <p className="text-xs leading-5 text-red-700">{error}</p>
-                </div>
-              )}
+          {isCompleted ? (
+            <div className="py-5 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
+                <CheckCircle2 size={30} />
+              </div>
+
+              <h1 className="mt-6 text-2xl font-semibold tracking-tight text-[#151a18]">
+                Password updated
+              </h1>
+
+              <p className="mt-3 text-sm leading-6 text-[#68736d]">
+                Your new password is ready. Sign in to your driver account using it.
+              </p>
 
               <Link
                 to="/drivers"
-                className="mt-6 inline-block text-sm font-semibold text-[#087f5b]"
+                className="mt-7 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d]"
               >
-                Return to driver sign in
+                Continue to driver sign in
               </Link>
             </div>
           ) : (
-            <form onSubmit={handleSavePassword} className="mt-7">
-              <label
-                htmlFor="new-password"
-                className="mb-2 block text-sm font-semibold"
-              >
-                New password
-              </label>
-              <input
-                id="new-password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 8 characters"
-                minLength={8}
-                required
-                className="h-[52px] w-full rounded-xl border border-[#e1e7e3] px-4 text-sm outline-none focus:border-[#087f5b]"
-              />
+            <>
+              {/* PAGE TITLE */}
 
-              <label
-                htmlFor="confirm-password"
-                className="mb-2 mt-5 block text-sm font-semibold"
-              >
-                Confirm new password
-              </label>
-              <input
-                id="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Enter the password again"
-                minLength={8}
-                required
-                className="h-[52px] w-full rounded-xl border border-[#e1e7e3] px-4 text-sm outline-none focus:border-[#087f5b]"
-              />
-
-              {error && (
-                <div
-                  role="alert"
-                  className="mt-5 flex gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5"
-                >
-                  <AlertCircle size={17} className="shrink-0 text-red-600" />
-                  <p className="text-xs leading-5 text-red-700">{error}</p>
+              <div className="mb-7">
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
+                  <LockKeyhole size={23} />
                 </div>
-              )}
 
-              {notice && (
-                <div
-                  role="status"
-                  className="mt-5 rounded-xl border border-[#dcefe5] bg-[#f0f8f3] p-3.5"
-                >
-                  <p className="text-xs leading-5 text-[#24684e]">{notice}</p>
-                </div>
-              )}
+                <h1 className="text-2xl font-semibold tracking-[-0.04em] text-[#151a18] sm:text-3xl">
+                  Create a new password
+                </h1>
 
-              <Button
-                type="submit"
-                fullWidth
-                size="large"
-                loading={isSaving}
-                disabled={isSaving}
-                className="mt-6"
-              >
-                {isSaving ? 'Updating password...' : 'Save new password'}
-              </Button>
-            </form>
+                <p className="mt-2 text-sm leading-6 text-[#818a85]">
+                  Choose a new password for your AbhiRide driver account.
+                </p>
+              </div>
+
+              {/* INVALID RESET LINK */}
+
+              {!isRecoverySession ? (
+                <>
+                  {error && (
+                    <div
+                      role="alert"
+                      className="flex gap-3 rounded-xl border border-red-100 bg-red-50 p-4"
+                    >
+                      <AlertCircle
+                        size={18}
+                        className="mt-0.5 shrink-0 text-red-600"
+                      />
+
+                      <p className="text-sm leading-6 text-red-700">
+                        {error}
+                      </p>
+                    </div>
+                  )}
+
+                  <Link
+                    to="/drivers"
+                    className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d]"
+                  >
+                    Return to driver sign in
+                  </Link>
+                </>
+              ) : (
+                /* PASSWORD RESET FORM */
+
+                <form onSubmit={handleSavePassword} noValidate>
+                  {/* NEW PASSWORD */}
+
+                  <div>
+                    <label
+                      htmlFor="new-password"
+                      className="mb-2 block text-sm font-semibold text-[#454d49]"
+                    >
+                      New password
+                    </label>
+
+                    <div className="flex h-12 items-center rounded-xl border border-[#e1e7e3] transition-colors focus-within:border-[#087f5b] focus-within:ring-4 focus-within:ring-[#087f5b]/10">
+                      <LockKeyhole
+                        size={17}
+                        className="ml-4 shrink-0 text-[#818a85]"
+                      />
+
+                      <input
+                        id="new-password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={password}
+                        onChange={(event) => {
+                          setPassword(event.target.value)
+                          setError('')
+                        }}
+                        placeholder="At least 8 characters"
+                        minLength={8}
+                        required
+                        disabled={isSaving}
+                        className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-[#a0a8a3]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowPassword((value) => !value)
+                        }
+                        aria-label={
+                          showPassword ? 'Hide password' : 'Show password'
+                        }
+                        className="flex h-full items-center px-4 text-[#818a85] hover:text-[#087f5b]"
+                      >
+                        {showPassword ? (
+                          <EyeOff size={17} />
+                        ) : (
+                          <Eye size={17} />
+                        )}
+                      </button>
+                    </div>
+
+                    <p className="mt-2 text-xs text-[#929a95]">
+                      Use at least 8 characters.
+                    </p>
+                  </div>
+
+                  {/* CONFIRM PASSWORD */}
+
+                  <div className="mt-5">
+                    <label
+                      htmlFor="confirm-password"
+                      className="mb-2 block text-sm font-semibold text-[#454d49]"
+                    >
+                      Confirm new password
+                    </label>
+
+                    <div className="flex h-12 items-center rounded-xl border border-[#e1e7e3] transition-colors focus-within:border-[#087f5b] focus-within:ring-4 focus-within:ring-[#087f5b]/10">
+                      <LockKeyhole
+                        size={17}
+                        className="ml-4 shrink-0 text-[#818a85]"
+                      />
+
+                      <input
+                        id="confirm-password"
+                        type={
+                          showConfirmPassword ? 'text' : 'password'
+                        }
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(event) => {
+                          setConfirmPassword(event.target.value)
+                          setError('')
+                        }}
+                        placeholder="Enter the password again"
+                        minLength={8}
+                        required
+                        disabled={isSaving}
+                        className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-[#a0a8a3]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowConfirmPassword((value) => !value)
+                        }
+                        aria-label={
+                          showConfirmPassword
+                            ? 'Hide confirmation password'
+                            : 'Show confirmation password'
+                        }
+                        className="flex h-full items-center px-4 text-[#818a85] hover:text-[#087f5b]"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff size={17} />
+                        ) : (
+                          <Eye size={17} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ERROR */}
+
+                  {error && (
+                    <div
+                      role="alert"
+                      className="mt-5 flex gap-3 rounded-xl border border-red-100 bg-red-50 p-3.5"
+                    >
+                      <AlertCircle
+                        size={17}
+                        className="mt-0.5 shrink-0 text-red-600"
+                      />
+
+                      <p className="text-xs leading-5 text-red-700">
+                        {error}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* NOTICE */}
+
+                  {notice && (
+                    <div
+                      role="status"
+                      className="mt-5 rounded-xl border border-[#dcefe5] bg-[#f0f8f3] p-3.5"
+                    >
+                      <p className="text-xs leading-5 text-[#24684e]">
+                        {notice}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* SAVE BUTTON */}
+
+                  <Button
+                    type="submit"
+                    fullWidth
+                    size="large"
+                    loading={isSaving}
+                    disabled={isSaving}
+                    className="mt-6"
+                  >
+                    {isSaving
+                      ? 'Updating password...'
+                      : 'Save new password'}
+                  </Button>
+                </form>
+              )}
+            </>
           )}
 
-          <div className="mt-7 flex items-center justify-center gap-2 text-xs text-[#818a85]">
-            <ShieldCheck size={15} />
-            Secure password recovery
-          </div>
         </section>
       </main>
+
+      {/* FOOTER */}
+
+      <footer className="border-t border-[#e8ece9] bg-white">
+        <div className="mx-auto flex max-w-[1100px] flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <Logo size="small" />
+
+          <p className="text-xs text-[#818a85]">
+            © {new Date().getFullYear()} AbhiRide. All rights reserved.
+          </p>
+
+          <a
+            href="mailto:contactabhiride@gmail.com"
+            className="text-xs font-semibold text-[#087f5b] hover:text-[#066b4d]"
+          >
+            Contact Us
+          </a>
+        </div>
+      </footer>
     </div>
   )
 }

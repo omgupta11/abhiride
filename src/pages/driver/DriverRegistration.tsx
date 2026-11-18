@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ShieldCheck } from 'lucide-react'
@@ -8,6 +9,24 @@ import { supabase } from '../../lib/supabase'
 
 import type { DriverRegistrationInput } from '../../types/driver'
 
+const normalizeIndianPhone = (value: string) => {
+  let digits = value.replace(/\D/g, '')
+
+  if (digits.startsWith('91') && digits.length === 12) {
+    digits = digits.slice(2)
+  }
+
+  if (digits.startsWith('0') && digits.length === 11) {
+    digits = digits.slice(1)
+  }
+
+  if (!/^[6-9]\d{9}$/.test(digits)) {
+    throw new Error('Please enter a valid 10-digit Indian mobile number.')
+  }
+
+  return `+91${digits}`
+}
+
 const DriverRegistration = () => {
   const navigate = useNavigate()
 
@@ -15,11 +34,7 @@ const DriverRegistration = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  /*
-  =========================================
-  CHECK EXISTING DRIVER SESSION
-  =========================================
-  */
+  // CHECK EXISTING DRIVER SESSION
 
   useEffect(() => {
     let mounted = true
@@ -51,9 +66,10 @@ const DriverRegistration = () => {
           return
         }
 
-        // A signed-in user without a driver profile should not
-        // accidentally continue with a second registration.
-        await supabase.auth.signOut()
+        // Clear an incomplete or non-driver session before registration.
+        const { error: signOutError } = await supabase.auth.signOut()
+
+        if (signOutError) throw signOutError
 
         if (mounted) setIsCheckingSession(false)
       } catch (err) {
@@ -75,11 +91,7 @@ const DriverRegistration = () => {
     }
   }, [navigate])
 
-  /*
-  =========================================
-  DRIVER REGISTRATION
-  =========================================
-  */
+  // DRIVER REGISTRATION
 
   const handleRegistration = async (data: DriverRegistrationInput) => {
     if (isSubmitting) return
@@ -89,9 +101,11 @@ const DriverRegistration = () => {
 
     try {
       const normalizedEmail = data.email.trim().toLowerCase()
-      const phone = `+91${data.phone.trim()}`
+      const fullName = data.fullName.trim()
+      const phone = normalizeIndianPhone(data.phone)
 
-      // Create the driver authentication account.
+      // CREATE AUTHENTICATION ACCOUNT
+
       const {
         data: authData,
         error: signUpError,
@@ -100,7 +114,7 @@ const DriverRegistration = () => {
         password: data.password,
         options: {
           data: {
-            full_name: data.fullName.trim(),
+            full_name: fullName,
           },
         },
       })
@@ -117,11 +131,12 @@ const DriverRegistration = () => {
 
       if (!authData.session) {
         throw new Error(
-          'Registration requires an active session. Please check that email confirmation is disabled in your Supabase authentication settings.',
+          'Registration could not start an active session. Please check that email confirmation is disabled in your Supabase authentication settings for this prototype.',
         )
       }
 
-      // Check whether a driver profile already exists.
+      // CHECK FOR AN EXISTING DRIVER PROFILE
+
       const {
         data: existingDriver,
         error: existingDriverError,
@@ -138,12 +153,13 @@ const DriverRegistration = () => {
         return
       }
 
-      // Create the driver profile.
+      // CREATE DRIVER PROFILE
+
       const { error: insertError } = await supabase
         .from('drivers')
         .insert({
           id: user.id,
-          full_name: data.fullName.trim(),
+          full_name: fullName,
           phone,
           phone_verified: false,
           vehicle_type: data.vehicleType,
@@ -154,22 +170,31 @@ const DriverRegistration = () => {
 
       if (insertError) throw insertError
 
-      // Upload optional profile photo.
+      // UPLOAD OPTIONAL PROFILE PHOTO
+
       if (data.profilePhoto) {
         const file = data.profilePhoto
-        const fileExtension = file.name.split('.').pop() || 'jpg'
-        const filePath = `${user.id}/profile.${fileExtension}`
+
+        const fileExtension =
+          file.type === 'image/png'
+            ? 'png'
+            : file.type === 'image/webp'
+              ? 'webp'
+              : 'jpg'
+
+        const filePath = `${user.id}/profile-${crypto.randomUUID()}.${fileExtension}`
 
         const { error: uploadError } = await supabase.storage
           .from('driver-photos')
           .upload(filePath, file, {
-            upsert: true,
+            cacheControl: '3600',
+            upsert: false,
             contentType: file.type,
           })
 
         if (uploadError) {
           throw new Error(
-            `Your driver profile was created, but the profile photo could not be uploaded: ${uploadError.message}`,
+            `Your driver account was created, but the profile photo could not be uploaded: ${uploadError.message}`,
           )
         }
 
@@ -187,11 +212,21 @@ const DriverRegistration = () => {
           .eq('id', user.id)
 
         if (photoUpdateError) {
+          try {
+            await supabase.storage
+              .from('driver-photos')
+              .remove([filePath])
+          } catch {
+            // Keep the driver profile even if photo cleanup fails.
+          }
+
           throw new Error(
-            `Your driver profile was created, but the profile photo could not be saved: ${photoUpdateError.message}`,
+            `Your driver account was created, but the profile photo could not be saved: ${photoUpdateError.message}`,
           )
         }
       }
+
+      // REGISTRATION COMPLETE
 
       navigate('/drivers/dashboard', { replace: true })
     } catch (err) {
@@ -205,11 +240,7 @@ const DriverRegistration = () => {
     }
   }
 
-  /*
-  =========================================
-  SESSION CHECK SCREEN
-  =========================================
-  */
+  // SESSION CHECK SCREEN
 
   if (isCheckingSession) {
     return (
@@ -221,18 +252,14 @@ const DriverRegistration = () => {
     )
   }
 
-  /*
-  =========================================
-  REGISTRATION PAGE
-  =========================================
-  */
+  // REGISTRATION PAGE
 
   return (
     <div className="min-h-screen bg-[#fafbfa]">
+      {/* HEADER */}
 
       <header className="border-b border-[#e8ece9] bg-white">
-        <div className="mx-auto flex h-[72px] max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
-
+        <div className="mx-auto flex h-[72px] max-w-[1100px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" aria-label="AbhiRide homepage">
             <Logo />
           </Link>
@@ -244,27 +271,27 @@ const DriverRegistration = () => {
             <ArrowLeft size={16} />
             Driver sign in
           </Link>
-
         </div>
       </header>
 
-      <main className="mx-auto max-w-[760px] px-4 py-10 sm:px-6 sm:py-14">
+      {/* MAIN CONTENT */}
 
+      <main className="mx-auto flex min-h-[calc(100vh-145px)] max-w-[760px] flex-col px-4 py-9 sm:px-6 sm:py-12">
         <div className="mb-8 text-center">
-
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
             <ShieldCheck size={27} />
           </div>
 
           <h1 className="mt-5 text-3xl font-bold tracking-[-0.04em] text-[#151a18]">
-            Become an AbhiRide driver
+            Driver registration
           </h1>
 
-          <p className="mx-auto mt-3 max-w-[480px] text-sm leading-6 text-[#68736d]">
-            Create your driver account and connect with nearby customers.
+          <p className="mx-auto mt-3 max-w-[460px] text-sm leading-6 text-[#68736d]">
+            Create your AbhiRide driver account.
           </p>
-
         </div>
+
+        {/* ERROR MESSAGE */}
 
         {error && (
           <div
@@ -275,31 +302,44 @@ const DriverRegistration = () => {
           </div>
         )}
 
-        <section className="rounded-2xl border border-[#e8ece9] bg-white p-5 shadow-[0_4px_24px_rgba(20,35,27,0.035)] sm:p-8">
+        {/* REGISTRATION FORM */}
 
+        <section className="rounded-2xl border border-[#e8ece9] bg-white p-5 shadow-[0_4px_24px_rgba(20,35,27,0.035)] sm:p-8">
           <DriverForm
             onSubmit={handleRegistration}
             isSubmitting={isSubmitting}
             registrationEnabled
           />
-
         </section>
+
+        {/* SIGN IN LINK */}
 
         <p className="mt-7 text-center text-sm text-[#68736d]">
           Already registered?{' '}
           <Link
             to="/drivers"
-            className="font-semibold text-[#087f5b] hover:text-[#066b4d]"
+            className="font-semibold text-[#087f5b] transition-colors hover:text-[#066b4d]"
           >
             Sign in to your account
           </Link>
         </p>
 
-        <p className="mt-5 text-center text-xs leading-5 text-[#929a95]">
-          Your account uses email and password authentication.
-          Mobile verification is not required for the current prototype.
-        </p>
+        {/* FOOTER */}
 
+        <footer className="mt-auto flex flex-col items-center gap-3 border-t border-[#e8ece9] pt-6 sm:flex-row sm:justify-between">
+          <Logo size="small" />
+
+          <p className="text-xs text-[#818a85]">
+            © {new Date().getFullYear()} AbhiRide. All rights reserved.
+          </p>
+
+          <a
+            href="mailto:contactabhiride@gmail.com"
+            className="text-xs font-semibold text-[#087f5b] hover:text-[#066b4d]"
+          >
+            Contact Us
+          </a>
+        </footer>
       </main>
     </div>
   )

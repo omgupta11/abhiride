@@ -2,20 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   ArrowLeft,
-  Bike,
-  CarFront,
-  CheckCircle2,
+  AlertCircle,
   Clock3,
   LocateFixed,
+  List,
   Map,
   MapPin,
   Phone,
   RefreshCw,
-  Search,
-  ShieldCheck,
   UserRound,
-  AlertCircle,
-  List,
 } from 'lucide-react'
 
 import Logo from '../../components/common/Logo'
@@ -57,7 +52,7 @@ interface NearbyDriverRow {
 }
 
 /* =========================================
-   DRIVER DATA USED BY THE UI AND MAP
+   DRIVER DATA
 ========================================= */
 
 interface NearbyDriver {
@@ -75,7 +70,7 @@ interface NearbyDriver {
 }
 
 /* =========================================
-   PAGE VIEW TYPE
+   VIEW TYPE
 ========================================= */
 
 type ResultsView = 'map' | 'list'
@@ -113,12 +108,12 @@ const formatDistance = (meters: number): string => {
 }
 
 const formatLastUpdate = (value: string | null): string => {
-  if (!value) return 'Location update time unavailable'
+  if (!value) return 'Location time unavailable'
 
   const timestamp = new Date(value).getTime()
 
   if (!Number.isFinite(timestamp)) {
-    return 'Location update time unavailable'
+    return 'Location time unavailable'
   }
 
   const elapsed = Date.now() - timestamp
@@ -147,7 +142,7 @@ const formatLastUpdate = (value: string | null): string => {
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message
 
-  return 'Something went wrong while searching for nearby drivers.'
+  return 'Something went wrong. Please try again.'
 }
 
 /* =========================================
@@ -155,52 +150,61 @@ const getErrorMessage = (error: unknown): string => {
 ========================================= */
 
 interface EmptyResultsProps {
-  vehicleType: VehicleType
   searching: boolean
   hasLocation: boolean
   onRetry: () => void
 }
 
 const EmptyResults = ({
-  vehicleType,
   searching,
   hasLocation,
   onRetry,
 }: EmptyResultsProps) => {
-  const Icon = vehicleType === 'bike' ? Bike : CarFront
-
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#dce4de] bg-white px-6 py-16 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
-        <Icon size={29} strokeWidth={1.7} />
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#dce4de] bg-white px-6 py-14 text-center">
+
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
+        <MapPin size={25} />
       </div>
 
       <h3 className="mt-5 text-lg font-semibold text-[#151a18]">
         {!hasLocation
-          ? 'Your location is needed'
+          ? 'Location required'
           : searching
             ? 'Finding nearby drivers'
-            : 'No nearby drivers found'}
+            : 'No nearby drivers'}
       </h3>
 
-      <p className="mt-2 max-w-md text-sm leading-6 text-[#818a85]">
+      <p className="mt-2 max-w-sm text-sm leading-6 text-[#818a85]">
         {!hasLocation
-          ? 'Allow location access to search for genuine nearby drivers.'
+          ? 'Enable location access to find nearby drivers.'
           : searching
-            ? 'Checking the live driver database for available vehicles.'
-            : `No LIVE ${vehicleLabels[vehicleType].toLowerCase()} were found within the search radius. Try refreshing your location or searching again later.`}
+            ? 'Searching for available vehicles.'
+            : 'No available drivers found nearby. Please try again.'}
       </p>
 
       {hasLocation && !searching && (
         <button
           type="button"
           onClick={onRetry}
-          className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d]"
+          className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d]"
         >
           <RefreshCw size={15} />
           Search again
         </button>
       )}
+
+      {!hasLocation && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d]"
+        >
+          <LocateFixed size={15} />
+          Use my location
+        </button>
+      )}
+
     </div>
   )
 }
@@ -212,9 +216,13 @@ const EmptyResults = ({
 const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
   return (
     <article className="rounded-2xl border border-[#e8ece9] bg-white p-5 shadow-[0_2px_12px_rgba(20,35,27,0.025)] sm:p-6">
+
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+
         <div className="flex min-w-0 items-start gap-4">
+
           <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#f0f8f3] text-[#087f5b]">
+
             {driver.profilePhotoUrl ? (
               <img
                 src={driver.profilePhotoUrl}
@@ -225,30 +233,29 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
             ) : (
               <UserRound size={25} />
             )}
+
           </div>
 
           <div className="min-w-0">
+
             <h3 className="truncate text-base font-semibold text-[#151a18]">
               {driver.fullName}
             </h3>
 
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#68736d]">
-                LIVE
-              </span>
-            </div>
-
-            <p className="mt-3 text-sm font-medium text-[#454d49]">
+            <p className="mt-2 text-sm font-medium text-[#454d49]">
               {driver.vehicleModel}
             </p>
 
             <p className="mt-1 text-xs tracking-wide text-[#818a85]">
               {driver.vehicleNumber}
             </p>
+
           </div>
+
         </div>
 
         <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f0f8f3] px-3 py-1.5 text-xs font-semibold text-[#087f5b]">
             <MapPin size={13} />
             {formatDistance(driver.distanceMeters)}
@@ -258,10 +265,13 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
             <Clock3 size={12} />
             {formatLastUpdate(driver.lastLocationUpdate)}
           </span>
+
         </div>
+
       </div>
 
       <div className="mt-5 border-t border-[#edf0ed] pt-4">
+
         <a
           href={`tel:${driver.phone}`}
           className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#087f5b] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#066b4d]"
@@ -269,7 +279,9 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
           <Phone size={16} />
           Call driver
         </a>
+
       </div>
+
     </article>
   )
 }
@@ -289,11 +301,12 @@ const ViewToggle = ({ view, onChange }: ViewToggleProps) => {
       className="inline-flex items-center rounded-xl border border-[#e8ece9] bg-white p-1"
       aria-label="Choose results view"
     >
+
       <button
         type="button"
         onClick={() => onChange('map')}
         aria-pressed={view === 'map'}
-        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
+        className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
           view === 'map'
             ? 'bg-[#087f5b] text-white shadow-sm'
             : 'text-[#68736d] hover:bg-[#f3faf6]'
@@ -307,7 +320,7 @@ const ViewToggle = ({ view, onChange }: ViewToggleProps) => {
         type="button"
         onClick={() => onChange('list')}
         aria-pressed={view === 'list'}
-        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
+        className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
           view === 'list'
             ? 'bg-[#087f5b] text-white shadow-sm'
             : 'text-[#68736d] hover:bg-[#f3faf6]'
@@ -316,6 +329,7 @@ const ViewToggle = ({ view, onChange }: ViewToggleProps) => {
         <List size={15} />
         List
       </button>
+
     </div>
   )
 }
@@ -356,9 +370,6 @@ const RideResults = () => {
 
   const [searchError, setSearchError] = useState('')
 
-  const [locationPermissionDenied, setLocationPermissionDenied] =
-    useState(false)
-
   const [searchVersion, setSearchVersion] = useState(0)
 
   const [resultsView, setResultsView] =
@@ -367,7 +378,7 @@ const RideResults = () => {
   const searchRequestId = useRef(0)
 
   /* =====================================
-     REAL DRIVER MAP SEARCH
+     DRIVER SEARCH
   ====================================== */
 
   const searchDrivers = useCallback(async () => {
@@ -396,7 +407,6 @@ const RideResults = () => {
 
       if (error) throw error
 
-      // Ignore an older request if a newer search has started.
       if (requestId !== searchRequestId.current) return
 
       const rows = (data ?? []) as NearbyDriverRow[]
@@ -432,11 +442,13 @@ const RideResults = () => {
         }))
 
       setDrivers(validDrivers)
+
     } catch (error) {
       if (requestId !== searchRequestId.current) return
 
       setDrivers([])
       setSearchError(getErrorMessage(error))
+
     } finally {
       if (requestId === searchRequestId.current) {
         setSearching(false)
@@ -445,7 +457,7 @@ const RideResults = () => {
   }, [customerLocation, selectedVehicle])
 
   /* =====================================
-     INITIAL AND MANUAL DRIVER SEARCH
+     INITIAL SEARCH
   ====================================== */
 
   useEffect(() => {
@@ -457,7 +469,7 @@ const RideResults = () => {
   }, [searchDrivers, searchVersion])
 
   /* =====================================
-     AUTOMATIC DRIVER SEARCH REFRESH
+     AUTOMATIC DRIVER REFRESH
   ====================================== */
 
   useEffect(() => {
@@ -471,13 +483,13 @@ const RideResults = () => {
   }, [customerLocation, searchDrivers])
 
   /* =====================================
-     CUSTOMER LOCATION REFRESH
+     MANUAL CUSTOMER LOCATION UPDATE
   ====================================== */
 
   const refreshLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setLocationError(
-        'Your browser does not support location services.',
+        'Location services are not supported by this browser.',
       )
       return
     }
@@ -485,7 +497,6 @@ const RideResults = () => {
     setLocationRefreshing(true)
     setLocationError('')
     setSearchError('')
-    setLocationPermissionDenied(false)
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -504,8 +515,6 @@ const RideResults = () => {
         if (error.code === error.PERMISSION_DENIED) {
           message =
             'Location permission was denied. Enable it in your browser settings.'
-
-          setLocationPermissionDenied(true)
         }
 
         if (error.code === error.POSITION_UNAVAILABLE) {
@@ -530,7 +539,7 @@ const RideResults = () => {
   }, [])
 
   /* =====================================
-     AUTOMATIC CUSTOMER LOCATION REFRESH
+     AUTOMATIC CUSTOMER LOCATION UPDATE
   ====================================== */
 
   useEffect(() => {
@@ -551,8 +560,6 @@ const RideResults = () => {
         },
         (error) => {
           if (error.code === error.PERMISSION_DENIED) {
-            setLocationPermissionDenied(true)
-
             setLocationError(
               'Location permission was denied. Enable it in your browser settings.',
             )
@@ -586,7 +593,7 @@ const RideResults = () => {
   }
 
   /* =====================================
-     PAGE CONTENT
+     PAGE
   ====================================== */
 
   return (
@@ -595,212 +602,61 @@ const RideResults = () => {
       {/* HEADER */}
 
       <header className="sticky top-0 z-40 border-b border-[#e8ece9] bg-white/95 backdrop-blur-xl">
-        <div className="mx-auto flex h-[72px] max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
+
+        <div className="mx-auto flex h-[68px] max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
+
           <Link to="/" aria-label="AbhiRide homepage">
             <Logo />
           </Link>
 
           <Link
             to="/"
+            aria-label="Back to homepage"
             className="inline-flex items-center gap-2 text-sm font-medium text-[#68736d] transition-colors hover:text-[#087f5b]"
           >
             <ArrowLeft size={16} />
-
-            <span className="hidden sm:inline">
-              Back to search
-            </span>
-
-            <span className="sm:hidden">
-              Back
-            </span>
+            Back
           </Link>
+
         </div>
+
       </header>
 
       {/* MAIN CONTENT */}
 
-      <main className="mx-auto max-w-[1200px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-
-        {/* PAGE HEADING */}
-
-        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#087f5b]">
-              NEARBY RIDES
-            </p>
-
-            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[#151a18] sm:text-3xl">
-              Find your ride
-            </h1>
-
-            <p className="mt-2 text-sm leading-6 text-[#818a85]">
-              Discover nearby drivers and contact them directly.
-            </p>
-          </div>
-
-          <div className="inline-flex items-center gap-2 self-start rounded-full border border-[#e8ece9] bg-white px-3 py-2 sm:self-auto">
-            <span
-              className={`h-2 w-2 rounded-full ${
-                searching
-                  ? 'animate-pulse bg-[#b7791f]'
-                  : 'bg-[#087f5b]'
-              }`}
-            />
-
-            <span className="text-xs font-medium text-[#454d49]">
-              {searching
-                ? 'Searching live drivers'
-                : 'Live search connected'}
-            </span>
-          </div>
-        </section>
-
-        {/* CUSTOMER LOCATION */}
-
-        <section className="mt-7 rounded-2xl border border-[#e8ece9] bg-white p-4 shadow-[0_2px_12px_rgba(20,35,27,0.025)] sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0f8f3] text-[#087f5b]">
-                <MapPin size={20} />
-              </div>
-
-              <div>
-                <h2 className="text-sm font-semibold text-[#151a18]">
-                  Your current location
-                </h2>
-
-                <p className="mt-1 text-xs leading-5 text-[#818a85]">
-                  {customerLocation
-                    ? 'Your device location is being refreshed automatically.'
-                    : 'Allow location access to find nearby drivers.'}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={refreshLocation}
-              disabled={locationRefreshing}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#e8ece9] bg-white px-4 text-xs font-semibold text-[#087f5b] transition-colors hover:bg-[#f3faf6] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <LocateFixed
-                size={15}
-                className={
-                  locationRefreshing ? 'animate-pulse' : ''
-                }
-              />
-
-              {locationRefreshing
-                ? 'Locating...'
-                : customerLocation
-                  ? 'Refresh location'
-                  : 'Use my location'}
-            </button>
-          </div>
-
-          {locationError && (
-            <div
-              role="alert"
-              className="mt-3 rounded-xl border border-[#f2dddd] bg-[#fff8f8] p-3"
-            >
-              <p className="text-xs leading-5 text-[#c24141]">
-                {locationError}
-              </p>
-
-              {locationPermissionDenied && (
-                <p className="mt-1 text-xs leading-5 text-[#818a85]">
-                  You can change location permissions through your browser's site settings.
-                </p>
-              )}
-            </div>
-          )}
-
-          {customerLocation && (
-            <div className="mt-3 flex items-center gap-2 border-t border-[#e8ece9] pt-3">
-              <CheckCircle2
-                size={14}
-                className="shrink-0 text-[#087f5b]"
-              />
-
-              <p className="text-xs text-[#68736d]">
-                Location available. Your precise coordinates are not displayed publicly.
-              </p>
-            </div>
-          )}
-        </section>
+      <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
 
         {/* VEHICLE SELECTION */}
 
-        <section className="mt-8">
+        <section>
           <VehicleSelector
             selectedVehicle={selectedVehicle}
             onChange={handleVehicleChange}
           />
         </section>
 
-        {/* RESULTS HEADING AND VIEW TOGGLE */}
+        {/* LOCATION / SEARCH ERROR */}
 
-        <section className="mt-9">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-            <div>
-              <h2 className="text-lg font-semibold text-[#151a18]">
-                Nearby {vehicleLabels[selectedVehicle].toLowerCase()}
-              </h2>
-
-              <p className="mt-1 text-xs leading-5 text-[#818a85]">
-                LIVE drivers within {SEARCH_RADIUS_METERS / 1000} km, sorted by distance.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-[#e8ece9] bg-white px-3">
-                <Clock3
-                  size={14}
-                  className="text-[#818a85]"
-                />
-
-                <span className="text-xs font-medium text-[#68736d]">
-                  {searching
-                    ? 'Updating results'
-                    : `${drivers.length} driver${drivers.length === 1 ? '' : 's'} found`}
-                </span>
-              </div>
-
-              <ViewToggle
-                view={resultsView}
-                onChange={handleViewChange}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* SEARCH ERROR */}
-
-        {searchError && (
+        {locationError && (
           <div
             role="alert"
-            className="mt-5 flex items-start gap-3 rounded-xl border border-[#f2dddd] bg-[#fff8f8] p-4"
+            className="mt-4 flex items-start gap-3 rounded-xl border border-[#f2dddd] bg-[#fff8f8] p-3"
           >
             <AlertCircle
-              size={18}
+              size={17}
               className="mt-0.5 shrink-0 text-[#c24141]"
             />
 
-            <div>
-              <h3 className="text-sm font-semibold text-[#a83232]">
-                Driver search failed
-              </h3>
-
-              <p className="mt-1 text-xs leading-5 text-[#c24141]">
-                {searchError}
+            <div className="flex-1">
+              <p className="text-xs leading-5 text-[#c24141]">
+                {locationError}
               </p>
 
               <button
                 type="button"
-                onClick={handleRetry}
-                className="mt-3 text-xs font-semibold text-[#087f5b]"
+                onClick={refreshLocation}
+                disabled={locationRefreshing}
+                className="mt-2 text-xs font-semibold text-[#087f5b]"
               >
                 Try again
               </button>
@@ -808,195 +664,153 @@ const RideResults = () => {
           </div>
         )}
 
+        {/* RESULTS HEADING */}
+
+        <section className="mt-7">
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-[#151a18] sm:text-2xl">
+                Nearby {vehicleLabels[selectedVehicle].toLowerCase()}
+              </h1>
+
+              <p className="mt-1 text-xs text-[#818a85]">
+                {drivers.length} driver{drivers.length === 1 ? '' : 's'} found
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+
+              <button
+                type="button"
+                onClick={refreshLocation}
+                disabled={locationRefreshing}
+                aria-label="Update my location"
+                title="Update my location"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#e8ece9] bg-white text-[#087f5b] transition-colors hover:bg-[#f3faf6] disabled:opacity-50"
+              >
+                <LocateFixed
+                  size={17}
+                  className={locationRefreshing ? 'animate-pulse' : ''}
+                />
+              </button>
+
+              <ViewToggle
+                view={resultsView}
+                onChange={handleViewChange}
+              />
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* SEARCH ERROR */}
+
+        {searchError && (
+          <div
+            role="alert"
+            className="mt-4 flex items-start gap-3 rounded-xl border border-[#f2dddd] bg-[#fff8f8] p-4"
+          >
+            <AlertCircle
+              size={18}
+              className="mt-0.5 shrink-0 text-[#c24141]"
+            />
+
+            <div className="flex-1">
+              <p className="text-xs leading-5 text-[#c24141]">
+                {searchError}
+              </p>
+
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="mt-2 text-xs font-semibold text-[#087f5b]"
+              >
+                Try again
+              </button>
+            </div>
+
+          </div>
+        )}
+
         {/* MAP VIEW */}
 
         {resultsView === 'map' && (
-          <section className="mt-5">
+          <section className="mt-4">
+
             {customerLocation ? (
-              <div className="space-y-3">
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-[#68736d]">
-                    Showing nearby {vehicleLabels[selectedVehicle].toLowerCase()}
-                  </p>
-
-                  <p className="text-xs text-[#818a85]">
-                    Map refreshes automatically every 15 seconds
-                  </p>
-                </div>
-
-                <LiveDriverMap
-                  customerLocation={customerLocation}
-                  drivers={drivers}
-                />
-
-                {/* MAP LEGEND */}
-
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#e8ece9] bg-white px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full border-2 border-white bg-[#2563eb] shadow-sm" />
-
-                    <span className="text-xs text-[#68736d]">
-                      Your location
-                    </span>
-                  </div>
-
-                  {selectedVehicle === 'auto' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">🛺</span>
-
-                      <span className="text-xs text-[#68736d]">
-                        Auto drivers
-                      </span>
-                    </div>
-                  )}
-
-                  {selectedVehicle === 'taxi' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">🚕</span>
-
-                      <span className="text-xs text-[#68736d]">
-                        Taxi drivers
-                      </span>
-                    </div>
-                  )}
-
-                  {selectedVehicle === 'bike' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">🏍️</span>
-
-                      <span className="text-xs text-[#68736d]">
-                        Bike drivers
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-              </div>
+              <LiveDriverMap
+                customerLocation={customerLocation}
+                drivers={drivers}
+              />
             ) : (
               <EmptyResults
-                vehicleType={selectedVehicle}
-                searching={searching}
+                searching={locationRefreshing}
                 hasLocation={false}
                 onRetry={refreshLocation}
               />
             )}
+
           </section>
         )}
 
         {/* LIST VIEW */}
 
         {resultsView === 'list' && (
-          <section className="mt-5">
+          <section className="mt-4">
+
             {drivers.length > 0 ? (
-              <div className="grid gap-4">
+              <div className="grid gap-3">
+
                 {drivers.map((driver) => (
                   <DriverCard
                     key={driver.id}
                     driver={driver}
                   />
                 ))}
+
               </div>
             ) : (
               <EmptyResults
-                vehicleType={selectedVehicle}
                 searching={searching}
                 hasLocation={Boolean(customerLocation)}
                 onRetry={handleRetry}
               />
             )}
+
           </section>
         )}
 
-        {/* PRIVACY INFORMATION */}
-
-        <section className="mt-12 rounded-2xl border border-[#e8ece9] bg-white p-6 sm:p-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#f0f8f3] text-[#087f5b]">
-              <ShieldCheck size={21} />
-            </div>
-
-            <h2 className="mt-4 text-lg font-semibold tracking-tight text-[#151a18]">
-              Your location. Your privacy.
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-[#68736d]">
-              Your precise customer location is used to find nearby drivers.
-              It is not displayed publicly or permanently stored just because
-              you search for a ride.
-            </p>
-          </div>
-        </section>
-
-        {/* HOW ABHIRIDE WORKS */}
-
-        <section className="mt-8 rounded-2xl bg-[#f0f8f3] p-6 sm:p-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-white text-[#087f5b]">
-              <Search size={21} />
-            </div>
-
-            <h2 className="mt-4 text-lg font-semibold tracking-tight text-[#151a18]">
-              Simple local ride discovery
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-[#68736d]">
-              Choose your vehicle category, discover nearby available drivers,
-              contact them directly and agree on your fare together.
-              No in-app booking and no platform commission.
-            </p>
-
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <div className="rounded-xl border border-[#dce9df] bg-white px-4 py-2.5 text-xs font-medium text-[#454d49]">
-                No customer account
-              </div>
-
-              <div className="rounded-xl border border-[#dce9df] bg-white px-4 py-2.5 text-xs font-medium text-[#454d49]">
-                Direct driver contact
-              </div>
-
-              <div className="rounded-xl border border-[#dce9df] bg-white px-4 py-2.5 text-xs font-medium text-[#454d49]">
-                Zero commission
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* BACK TO HOME */}
-
-        <section className="mt-8 flex flex-col items-center justify-center gap-3 py-4 text-center">
-          <p className="text-sm text-[#818a85]">
-            Want to explore AbhiRide?
-          </p>
-
-          <Link
-            to="/"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#e8ece9] bg-white px-5 text-sm font-semibold text-[#087f5b] transition-colors hover:bg-[#f3faf6]"
-          >
-            <ArrowLeft size={15} />
-            Return to homepage
-          </Link>
-        </section>
-
       </main>
 
-      {/* FOOTER */}
+      {/* MINIMAL FOOTER */}
 
       <footer className="border-t border-[#e8ece9] bg-white">
-        <div className="mx-auto flex max-w-[1200px] flex-col gap-3 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+
+        <div className="mx-auto flex max-w-[1200px] flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+
           <Logo size="small" />
 
-          <p className="text-xs text-[#818a85]">
-            © {new Date().getFullYear()} AbhiRide. All rights reserved.
-          </p>
+          <div className="flex items-center gap-5 text-xs text-[#68736d]">
 
-          <Link
-            to="/"
-            className="text-xs font-semibold text-[#087f5b] hover:text-[#066b4d]"
-          >
-            Back to homepage
-          </Link>
+            <a
+              href="mailto:contactabhiride@gmail.com"
+              className="font-medium transition-colors hover:text-[#087f5b]"
+            >
+              Contact Us
+            </a>
+
+            <span className="text-[#a0a8a3]">
+              © {new Date().getFullYear()} AbhiRide
+            </span>
+
+          </div>
+
         </div>
+
       </footer>
 
     </div>
