@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   LocateFixed,
+  Map,
   MapPin,
   Phone,
   RefreshCw,
@@ -14,10 +15,12 @@ import {
   ShieldCheck,
   UserRound,
   AlertCircle,
+  List,
 } from 'lucide-react'
 
 import Logo from '../../components/common/Logo'
 import VehicleSelector from '../../components/customer/VehicleSelector'
+import LiveDriverMap from '../../components/customer/LiveDriverMap'
 import { supabase } from '../../lib/supabase'
 
 import type {
@@ -36,7 +39,7 @@ interface RideResultsLocationState {
 }
 
 /* =========================================
-   SUPABASE SEARCH RESULT
+   SUPABASE MAP SEARCH RESULT
 ========================================= */
 
 interface NearbyDriverRow {
@@ -47,9 +50,15 @@ interface NearbyDriverRow {
   vehicle_model: string
   vehicle_number: string
   profile_photo_url: string | null
+  latitude: number
+  longitude: number
   distance_meters: number
   last_location_update: string | null
 }
+
+/* =========================================
+   DRIVER DATA USED BY THE UI AND MAP
+========================================= */
 
 interface NearbyDriver {
   id: string
@@ -59,16 +68,26 @@ interface NearbyDriver {
   vehicleModel: string
   vehicleNumber: string
   profilePhotoUrl: string | null
+  latitude: number
+  longitude: number
   distanceMeters: number
   lastLocationUpdate: string | null
 }
+
+/* =========================================
+   PAGE VIEW TYPE
+========================================= */
+
+type ResultsView = 'map' | 'list'
 
 /* =========================================
    CONSTANTS
 ========================================= */
 
 const SEARCH_RADIUS_METERS = 5000
+
 const CUSTOMER_LOCATION_REFRESH_MS = 15000
+
 const DRIVER_SEARCH_REFRESH_MS = 15000
 
 const vehicleLabels: Record<VehicleType, string> = {
@@ -106,9 +125,9 @@ const formatLastUpdate = (value: string | null): string => {
 
   if (elapsed < 0) return 'Recently updated'
 
-  if (elapsed < 60_000) return 'Updated just now'
+  if (elapsed < 60000) return 'Updated just now'
 
-  const minutes = Math.floor(elapsed / 60_000)
+  const minutes = Math.floor(elapsed / 60000)
 
   if (minutes < 60) {
     return `Updated ${minutes} minute${minutes === 1 ? '' : 's'} ago`
@@ -256,6 +275,52 @@ const DriverCard = ({ driver }: { driver: NearbyDriver }) => {
 }
 
 /* =========================================
+   MAP / LIST TOGGLE
+========================================= */
+
+interface ViewToggleProps {
+  view: ResultsView
+  onChange: (view: ResultsView) => void
+}
+
+const ViewToggle = ({ view, onChange }: ViewToggleProps) => {
+  return (
+    <div
+      className="inline-flex items-center rounded-xl border border-[#e8ece9] bg-white p-1"
+      aria-label="Choose results view"
+    >
+      <button
+        type="button"
+        onClick={() => onChange('map')}
+        aria-pressed={view === 'map'}
+        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
+          view === 'map'
+            ? 'bg-[#087f5b] text-white shadow-sm'
+            : 'text-[#68736d] hover:bg-[#f3faf6]'
+        }`}
+      >
+        <Map size={15} />
+        Map
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onChange('list')}
+        aria-pressed={view === 'list'}
+        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
+          view === 'list'
+            ? 'bg-[#087f5b] text-white shadow-sm'
+            : 'text-[#68736d] hover:bg-[#f3faf6]'
+        }`}
+      >
+        <List size={15} />
+        List
+      </button>
+    </div>
+  )
+}
+
+/* =========================================
    RESULTS PAGE
 ========================================= */
 
@@ -296,27 +361,31 @@ const RideResults = () => {
 
   const [searchVersion, setSearchVersion] = useState(0)
 
-  const searchInProgress = useRef(false)
+  const [resultsView, setResultsView] =
+    useState<ResultsView>('map')
+
+  const searchRequestId = useRef(0)
 
   /* =====================================
-     REAL DRIVER SEARCH
+     REAL DRIVER MAP SEARCH
   ====================================== */
 
   const searchDrivers = useCallback(async () => {
     if (!customerLocation) {
+      searchRequestId.current += 1
       setDrivers([])
+      setSearching(false)
       return
     }
 
-    if (searchInProgress.current) return
+    const requestId = ++searchRequestId.current
 
-    searchInProgress.current = true
     setSearching(true)
     setSearchError('')
 
     try {
       const { data, error } = await supabase.rpc(
-        'search_nearby_drivers',
+        'search_nearby_drivers_for_map',
         {
           p_latitude: customerLocation.latitude,
           p_longitude: customerLocation.longitude,
@@ -326,6 +395,9 @@ const RideResults = () => {
       )
 
       if (error) throw error
+
+      // Ignore an older request if a newer search has started.
+      if (requestId !== searchRequestId.current) return
 
       const rows = (data ?? []) as NearbyDriverRow[]
 
@@ -337,7 +409,13 @@ const RideResults = () => {
             typeof row.phone === 'string' &&
             typeof row.vehicle_model === 'string' &&
             typeof row.vehicle_number === 'string' &&
-            Number.isFinite(Number(row.distance_meters)),
+            Number.isFinite(Number(row.latitude)) &&
+            Number.isFinite(Number(row.longitude)) &&
+            Number.isFinite(Number(row.distance_meters)) &&
+            Number(row.latitude) >= -90 &&
+            Number(row.latitude) <= 90 &&
+            Number(row.longitude) >= -180 &&
+            Number(row.longitude) <= 180,
         )
         .map((row) => ({
           id: row.driver_id,
@@ -347,18 +425,28 @@ const RideResults = () => {
           vehicleModel: row.vehicle_model,
           vehicleNumber: row.vehicle_number,
           profilePhotoUrl: row.profile_photo_url,
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
           distanceMeters: Number(row.distance_meters),
           lastLocationUpdate: row.last_location_update,
         }))
 
       setDrivers(validDrivers)
     } catch (error) {
+      if (requestId !== searchRequestId.current) return
+
+      setDrivers([])
       setSearchError(getErrorMessage(error))
     } finally {
-      searchInProgress.current = false
-      setSearching(false)
+      if (requestId === searchRequestId.current) {
+        setSearching(false)
+      }
     }
   }, [customerLocation, selectedVehicle])
+
+  /* =====================================
+     INITIAL AND MANUAL DRIVER SEARCH
+  ====================================== */
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -383,7 +471,7 @@ const RideResults = () => {
   }, [customerLocation, searchDrivers])
 
   /* =====================================
-     CUSTOMER LOCATION
+     CUSTOMER LOCATION REFRESH
   ====================================== */
 
   const refreshLocation = useCallback(() => {
@@ -464,6 +552,7 @@ const RideResults = () => {
         (error) => {
           if (error.code === error.PERMISSION_DENIED) {
             setLocationPermissionDenied(true)
+
             setLocationError(
               'Location permission was denied. Enable it in your browser settings.',
             )
@@ -492,12 +581,17 @@ const RideResults = () => {
     setSearchVersion((previous) => previous + 1)
   }
 
+  const handleViewChange = (view: ResultsView) => {
+    setResultsView(view)
+  }
+
   /* =====================================
      PAGE CONTENT
   ====================================== */
 
   return (
     <div className="min-h-screen bg-[#fafbfa]">
+
       {/* HEADER */}
 
       <header className="sticky top-0 z-40 border-b border-[#e8ece9] bg-white/95 backdrop-blur-xl">
@@ -511,8 +605,14 @@ const RideResults = () => {
             className="inline-flex items-center gap-2 text-sm font-medium text-[#68736d] transition-colors hover:text-[#087f5b]"
           >
             <ArrowLeft size={16} />
-            <span className="hidden sm:inline">Back to search</span>
-            <span className="sm:hidden">Back</span>
+
+            <span className="hidden sm:inline">
+              Back to search
+            </span>
+
+            <span className="sm:hidden">
+              Back
+            </span>
           </Link>
         </div>
       </header>
@@ -520,6 +620,7 @@ const RideResults = () => {
       {/* MAIN CONTENT */}
 
       <main className="mx-auto max-w-[1200px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+
         {/* PAGE HEADING */}
 
         <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -540,12 +641,16 @@ const RideResults = () => {
           <div className="inline-flex items-center gap-2 self-start rounded-full border border-[#e8ece9] bg-white px-3 py-2 sm:self-auto">
             <span
               className={`h-2 w-2 rounded-full ${
-                searching ? 'animate-pulse bg-[#b7791f]' : 'bg-[#087f5b]'
+                searching
+                  ? 'animate-pulse bg-[#b7791f]'
+                  : 'bg-[#087f5b]'
               }`}
             />
 
             <span className="text-xs font-medium text-[#454d49]">
-              {searching ? 'Searching live drivers' : 'Live search connected'}
+              {searching
+                ? 'Searching live drivers'
+                : 'Live search connected'}
             </span>
           </div>
         </section>
@@ -554,6 +659,7 @@ const RideResults = () => {
 
         <section className="mt-7 rounded-2xl border border-[#e8ece9] bg-white p-4 shadow-[0_2px_12px_rgba(20,35,27,0.025)] sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0f8f3] text-[#087f5b]">
                 <MapPin size={20} />
@@ -580,7 +686,9 @@ const RideResults = () => {
             >
               <LocateFixed
                 size={15}
-                className={locationRefreshing ? 'animate-pulse' : ''}
+                className={
+                  locationRefreshing ? 'animate-pulse' : ''
+                }
               />
 
               {locationRefreshing
@@ -631,10 +739,11 @@ const RideResults = () => {
           />
         </section>
 
-        {/* RESULTS HEADING */}
+        {/* RESULTS HEADING AND VIEW TOGGLE */}
 
         <section className="mt-9">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
             <div>
               <h2 className="text-lg font-semibold text-[#151a18]">
                 Nearby {vehicleLabels[selectedVehicle].toLowerCase()}
@@ -645,14 +754,24 @@ const RideResults = () => {
               </p>
             </div>
 
-            <div className="inline-flex min-h-9 items-center gap-2 self-start rounded-xl border border-[#e8ece9] bg-white px-3">
-              <Clock3 size={14} className="text-[#818a85]" />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-[#e8ece9] bg-white px-3">
+                <Clock3
+                  size={14}
+                  className="text-[#818a85]"
+                />
 
-              <span className="text-xs font-medium text-[#68736d]">
-                {searching
-                  ? 'Updating results'
-                  : `${drivers.length} driver${drivers.length === 1 ? '' : 's'} found`}
-              </span>
+                <span className="text-xs font-medium text-[#68736d]">
+                  {searching
+                    ? 'Updating results'
+                    : `${drivers.length} driver${drivers.length === 1 ? '' : 's'} found`}
+                </span>
+              </div>
+
+              <ViewToggle
+                view={resultsView}
+                onChange={handleViewChange}
+              />
             </div>
           </div>
         </section>
@@ -689,24 +808,105 @@ const RideResults = () => {
           </div>
         )}
 
-        {/* LIVE DRIVER LIST */}
+        {/* MAP VIEW */}
 
-        <section className="mt-5">
-          {drivers.length > 0 ? (
-            <div className="grid gap-4">
-              {drivers.map((driver) => (
-                <DriverCard key={driver.id} driver={driver} />
-              ))}
-            </div>
-          ) : (
-            <EmptyResults
-              vehicleType={selectedVehicle}
-              searching={searching}
-              hasLocation={Boolean(customerLocation)}
-              onRetry={handleRetry}
-            />
-          )}
-        </section>
+        {resultsView === 'map' && (
+          <section className="mt-5">
+            {customerLocation ? (
+              <div className="space-y-3">
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-[#68736d]">
+                    Showing nearby {vehicleLabels[selectedVehicle].toLowerCase()}
+                  </p>
+
+                  <p className="text-xs text-[#818a85]">
+                    Map refreshes automatically every 15 seconds
+                  </p>
+                </div>
+
+                <LiveDriverMap
+                  customerLocation={customerLocation}
+                  drivers={drivers}
+                />
+
+                {/* MAP LEGEND */}
+
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#e8ece9] bg-white px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full border-2 border-white bg-[#2563eb] shadow-sm" />
+
+                    <span className="text-xs text-[#68736d]">
+                      Your location
+                    </span>
+                  </div>
+
+                  {selectedVehicle === 'auto' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🛺</span>
+
+                      <span className="text-xs text-[#68736d]">
+                        Auto drivers
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedVehicle === 'taxi' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🚕</span>
+
+                      <span className="text-xs text-[#68736d]">
+                        Taxi drivers
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedVehicle === 'bike' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🏍️</span>
+
+                      <span className="text-xs text-[#68736d]">
+                        Bike drivers
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            ) : (
+              <EmptyResults
+                vehicleType={selectedVehicle}
+                searching={searching}
+                hasLocation={false}
+                onRetry={refreshLocation}
+              />
+            )}
+          </section>
+        )}
+
+        {/* LIST VIEW */}
+
+        {resultsView === 'list' && (
+          <section className="mt-5">
+            {drivers.length > 0 ? (
+              <div className="grid gap-4">
+                {drivers.map((driver) => (
+                  <DriverCard
+                    key={driver.id}
+                    driver={driver}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyResults
+                vehicleType={selectedVehicle}
+                searching={searching}
+                hasLocation={Boolean(customerLocation)}
+                onRetry={handleRetry}
+              />
+            )}
+          </section>
+        )}
 
         {/* PRIVACY INFORMATION */}
 
@@ -777,6 +977,7 @@ const RideResults = () => {
             Return to homepage
           </Link>
         </section>
+
       </main>
 
       {/* FOOTER */}
@@ -797,6 +998,7 @@ const RideResults = () => {
           </Link>
         </div>
       </footer>
+
     </div>
   )
 }
