@@ -560,20 +560,22 @@ const DriverDashboard = () => {
 
   // DRIVER LOGOUT
 
-  const handleLogout = async () => {
-    try {
-      setError('')
-      stopLocationTracking()
 
-      await signOutDriver()
+const handleLogout = async () => {
+  try {
+    setError('')
+    stopLocationTracking()
 
-      window.location.assign('/drivers')
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unable to sign out.',
-      )
-    }
+    await signOutDriver()
+
+    window.location.replace('/')
+  } catch (err) {
+    setError(
+      err instanceof Error ? err.message : 'Unable to sign out.',
+    )
   }
+}
+
 
   // LOADING SCREEN
 
